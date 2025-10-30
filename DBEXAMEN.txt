@@ -1,0 +1,49 @@
+
+    CREATE DATABASE ITT_Calidad;
+GO
+
+USE ITT_Calidad;
+GO
+
+
+
+CREATE TABLE Estudiantes (
+    -- Datos de Identificación y Requisitos del Examen
+    Num_Control VARCHAR(10) PRIMARY KEY NOT NULL,
+    Apellido_Paterno VARCHAR(50) NOT NULL,
+    Apellido_Materno VARCHAR(50) NOT NULL,
+    Nombre VARCHAR(50) NOT NULL,
+    Carrera VARCHAR(10) NOT NULL,
+    Semestre INT NOT NULL,
+    Materia VARCHAR(50) NOT NULL,
+    
+    -- Calificaciones (5 Unidades)
+    Calificacion_Unidad_1 DECIMAL(5, 2) DEFAULT 0.0 CHECK (Calificacion_Unidad_1 BETWEEN 0 AND 100), 
+    Calificacion_Unidad_2 DECIMAL(5, 2) DEFAULT 0.0 CHECK (Calificacion_Unidad_2 BETWEEN 0 AND 100),
+    Calificacion_Unidad_3 DECIMAL(5, 2) DEFAULT 0.0 CHECK (Calificacion_Unidad_3 BETWEEN 0 AND 100),
+    Calificacion_Unidad_4 DECIMAL(5, 2) DEFAULT 0.0 CHECK (Calificacion_Unidad_4 BETWEEN 0 AND 100),
+    Calificacion_Unidad_5 DECIMAL(5, 2) DEFAULT 0.0 CHECK (Calificacion_Unidad_5 BETWEEN 0 AND 100),
+    
+    Asistencia_Porcentaje DECIMAL(5, 2) DEFAULT 0.0 CHECK,
+    
+    --Factores de Riesgo
+    Factor_Academico BIT DEFAULT 0,
+    Factor_Psicosocial BIT DEFAULT 0,
+    Factor_Economico BIT DEFAULT 0,
+    Factor_Institucional BIT DEFAULT 0,
+    Factor_Tecnologico BIT DEFAULT 0,
+    Factor_Contextual BIT DEFAULT 0
+);
+GO
+
+--inserción de un alumno
+INSERT INTO Estudiantes (
+    Num_Control, Apellido_Paterno, Apellido_Materno, Nombre, Carrera, Semestre, Materia,
+    Calificacion_Unidad_1, Calificacion_Unidad_2, Calificacion_Unidad_3, Calificacion_Unidad_4, Calificacion_Unidad_5, Asistencia_Porcentaje,
+    Factor_Academico
+) VALUES (
+    '2510013', 'Sanchez', 'Bustos', 'Ricardo', 'ISC', 5, 'TADS', 
+    85.0, 90.0, 75.0, 80.0, 90.0, 95.0,
+    0
+);
+GO
