@@ -8,9 +8,10 @@ from sqlalchemy import create_engine
 import urllib
 import sys
 import os 
+import re 
+import tkinter.font # Importar para usar la fuente de Tkinter directamente
 
-
-
+# [ ... EL CÓDIGO INICIAL DE CONFIGURACIÓN Y CONSTANTES ES EL MISMO ... ]
 
 SERVER = 'DESKTOP-4K70KRA' 
 DATABASE = 'ITT_Calidad'
@@ -29,11 +30,39 @@ CARRERAS_ITT = [
     "LA (Administración)", "LCP (Contador Público)"
 ]
 SEMESTRES_LIST = [str(i) for i in range(1, 16)]
+DISCAPACIDADES_LIST = ["Ninguna", "Visual", "Auditiva", "Motriz", "Cognitiva", "Otra"]
 
 
+# ====================================================================
+# VARIABLES GLOBALES DE ACCESIBILIDAD
+# ====================================================================
 
-# FUNCIONES DE BACKEND
+# Usaremos un tamaño de fuente base y una variable global para el tamaño actual
+BASE_FONT_SIZE = 10
+CURRENT_FONT_SIZE = BASE_FONT_SIZE
+COLOR_INVERTED = False 
+ZOOM_LEVEL = 100 # Nivel de zoom en porcentaje (100% es normal)
+# Definiciones de colores para la inversión
+COLOR_MAP = {
+    'white': '#000000',
+    '#ffffff': '#000000',
+    'black': '#ffffff',
+    '#000000': '#ffffff',
+    # Colores comunes de Tk/Ttk
+    'SystemWindow': 'SystemWindowText',
+    'SystemWindowText': 'SystemWindow',
+    'SystemButtonFace': 'SystemButtonText',
+    'SystemButtonText': 'SystemButtonFace',
+    'SystemHighlight': 'SystemHighlightText',
+    'SystemHighlightText': 'SystemHighlight',
+    # Para Matplotlib (si fuera necesario, pero la gráfica usa colores fijos)
+    'tab:blue': 'tab:red',
+    'tab:red': 'tab:blue',
+}
 
+# ====================================================================
+# FUNCIONES DE BACKEND (SIN CAMBIOS FUNCIONALES)
+# ====================================================================
 
 def conectar_sql_server():
     """Establece la conexión a SQL Server."""
@@ -110,9 +139,10 @@ def usuario_ya_existe(nombre_usuario):
     finally:
         if conn: conn.close()
 
-def registrar_estudiante_usuario(num_control, nombre, apellido_p, apellido_m, carrera, semestre, contrasena):
+def registrar_estudiante_usuario(num_control, nombre, apellido_p, apellido_m, carrera, semestre, contrasena, discapacidad):
     """
     Registra un nuevo estudiante y su usuario asociado (Rol 2).
+    Añade el campo 'Discapacidad'.
     """
     conn = conectar_sql_server()
     if not conn: return "Error de conexión con la base de datos."
@@ -129,12 +159,14 @@ def registrar_estudiante_usuario(num_control, nombre, apellido_p, apellido_m, ca
     if existe:
         return f"Error: El usuario o No. Control '{num_control}' ya está registrado en el sistema."
 
+    # ¡IMPORTANTE! Se agregó 'Discapacidad'
+    # Debes asegurar que la tabla 'Estudiantes' en SQL Server tiene una columna llamada 'Discapacidad' (e.g., VARCHAR(100))
     sql_estudiante = """
     INSERT INTO Estudiantes (
         Num_Control, Apellido_Paterno, Apellido_Materno, Nombre, Carrera, Semestre, Materia,
         Calificacion_Unidad_1, Calificacion_Unidad_2, Calificacion_Unidad_3, Calificacion_Unidad_4, Calificacion_Unidad_5, Asistencia_Porcentaje,
-        Factor_Academico, Factor_Psicosocial, Factor_Economico, Factor_Institucional, Factor_Tecnologico, Factor_Contextual
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        Factor_Academico, Factor_Psicosocial, Factor_Economico, Factor_Institucional, Factor_Tecnologico, Factor_Contextual, Discapacidad
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """  
     
     sql_usuario = """
@@ -151,7 +183,8 @@ def registrar_estudiante_usuario(num_control, nombre, apellido_p, apellido_m, ca
             'Sin Materia', 
             0.0, 0.0, 0.0, 0.0, 0.0, 
             0.0, 
-            0, 0, 0, 0, 0, 0 
+            0, 0, 0, 0, 0, 0,
+            discapacidad # <--- NUEVO CAMPO
         )
         
         cursor.execute(sql_estudiante, datos_estudiante_full)
@@ -175,7 +208,12 @@ def registrar_estudiante_usuario(num_control, nombre, apellido_p, apellido_m, ca
     finally:
         if conn: conn.close()
         
-def registrar_profesor_usuario(num_control, nombre, apellido_p, apellido_m, contrasena):
+def registrar_profesor_usuario(num_control, nombre, apellido_p, apellido_m, contrasena, discapacidad):
+    """
+    Registra un nuevo usuario Profesor (Rol 1).
+    Se usa el No. Control como Nombre_Usuario.
+    Se agregó el campo 'Discapacidad' al log, ya que la tabla 'Usuarios' es general.
+    """
     conn = conectar_sql_server()
     if not conn: return "Error de conexión con la base de datos."
     cursor = conn.cursor()
@@ -187,19 +225,21 @@ def registrar_profesor_usuario(num_control, nombre, apellido_p, apellido_m, cont
         return f"Error: El usuario o No. Control '{num_control}' ya está registrado en el sistema."
     
     sql_usuario = """
-    INSERT INTO Usuarios (Nombre_Usuario, Contrasena_Hash, ID_Rol_FK, Num_Control_FK) 
-    VALUES (?, ?, 1, ?)
+    INSERT INTO Usuarios (Nombre_Usuario, Contrasena_Hash, ID_Rol_FK, Num_Control_FK, Discapacidad) 
+    VALUES (?, ?, 1, ?, ?)
     """
-    
+    # ¡IMPORTANTE! Para profesor, estoy asumiendo que el campo Discapacidad se agrega a la tabla Usuarios.
+    # Debes asegurar que la tabla 'Usuarios' en SQL Server tiene una columna llamada 'Discapacidad' (e.g., VARCHAR(100))
+
     try:
         cursor.execute("BEGIN TRANSACTION")
         
        
-        datos_usuario = (num_control, contrasena, None) 
+        datos_usuario = (num_control, contrasena, None, discapacidad) # <--- NUEVO CAMPO
         cursor.execute(sql_usuario, datos_usuario)
         
         conn.commit() 
-        log_actividad(None, 'REGISTRO_NUEVO_PROFESOR', f"Registro exitoso de profesor: {num_control}")
+        log_actividad(None, 'REGISTRO_NUEVO_PROFESOR', f"Registro exitoso de profesor: {num_control} (Discapacidad: {discapacidad})")
         return "Registro exitoso. ¡Ahora puedes iniciar sesión como Profesor!"
 
     except pyodbc.IntegrityError:
@@ -212,22 +252,56 @@ def registrar_profesor_usuario(num_control, nombre, apellido_p, apellido_m, cont
     finally:
         if conn: conn.close()
 
+def obtener_discapacidad_usuario(num_control, rol_id):
+    conn = conectar_sql_server()
+    if not conn: return "N/D"
+    
+    try:
+        cursor = conn.cursor()
+        if rol_id == 2: # Estudiante
+            sql_query = "SELECT Discapacidad FROM Estudiantes WHERE Num_Control = ?"
+            cursor.execute(sql_query, num_control)
+            resultado = cursor.fetchone()
+            return resultado[0] if resultado else "N/D"
+        elif rol_id == 1: # Profesor
+            sql_query = """
+            SELECT U.Discapacidad
+            FROM Usuarios U
+            WHERE U.Nombre_Usuario = ? AND U.ID_Rol_FK = 1
+            """
+            cursor.execute(sql_query, num_control)
+            resultado = cursor.fetchone()
+            return resultado[0] if resultado else "N/D"
+        return "N/D"
+    except pyodbc.ProgrammingError:
+        # Esto ocurre si aún no has agregado la columna 'Discapacidad' a tus tablas.
+        print("Advertencia: La columna 'Discapacidad' probablemente falta en la BD. Regresando 'N/D'.")
+        return "N/D (Columna Faltante)"
+    except Exception as e:
+        print(f"Error al obtener discapacidad: {e}")
+        return "N/D (Error)"
+    finally:
+        if conn: conn.close()
+
+
 def insertar_registro_manual(datos, user_id):
     conn = conectar_sql_server()
     if not conn: return
     cursor = conn.cursor()
     
+    # ¡IMPORTANTE! Se agregó 'Discapacidad' a los campos de inserción.
+    # Ahora se esperan 20 campos.
     sql_insert = """
     INSERT INTO Estudiantes (
         Num_Control, Apellido_Paterno, Apellido_Materno, Nombre, Carrera, Semestre, Materia,
         Calificacion_Unidad_1, Calificacion_Unidad_2, Calificacion_Unidad_3, Calificacion_Unidad_4, Calificacion_Unidad_5, Asistencia_Porcentaje,
-        Factor_Academico, Factor_Psicosocial, Factor_Economico, Factor_Institucional, Factor_Tecnologico, Factor_Contextual
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        Factor_Academico, Factor_Psicosocial, Factor_Economico, Factor_Institucional, Factor_Tecnologico, Factor_Contextual, Discapacidad
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     
     try:
-        if len(datos) != 19:
-            raise ValueError(f"Error interno: Se esperaban 19 parámetros (columnas), pero se recibieron {len(datos)}. Verifica la función 'guardar_estudiante'.")
+        if len(datos) != 20: # <--- CAMBIO: Ahora son 20 campos
+            raise ValueError(f"Error interno: Se esperaban 20 parámetros (columnas), pero se recibieron {len(datos)}. Verifica la función 'guardar_estudiante'.")
 
         cursor.execute(sql_insert, datos)
         conn.commit() 
@@ -255,9 +329,10 @@ def actualizar_datos_estudiante(num_control, nuevos_datos, user_id):
     conn = conectar_sql_server()
     if not conn: return False
 
+    # Se agregó 'Discapacidad' a la actualización
     sql_update = """
     UPDATE Estudiantes 
-    SET Apellido_Paterno = ?, Apellido_Materno = ?, Nombre = ? 
+    SET Apellido_Paterno = ?, Apellido_Materno = ?, Nombre = ?, Discapacidad = ?
     WHERE Num_Control = ?
     """
     
@@ -268,7 +343,7 @@ def actualizar_datos_estudiante(num_control, nuevos_datos, user_id):
         conn.commit() 
         
         if cursor.rowcount > 0:
-            log_actividad(user_id, 'UPDATE_ESTUDIANTE', f"Actualizado Nombre/Apellidos de Num_Control: {num_control}")
+            log_actividad(user_id, 'UPDATE_ESTUDIANTE', f"Actualizado Nombre/Apellidos/Discapacidad de Num_Control: {num_control}")
             messagebox.showinfo("Éxito", "Datos actualizados correctamente.")
             return True
         else:
@@ -286,11 +361,12 @@ def obtener_datos_estudiante(num_control):
     conn = conectar_sql_server()
     if not conn: return None
     
+    # Se agregó 'Discapacidad' a la consulta. Ahora devuelve 12 campos.
     sql_query = """
     SELECT 
         Nombre, Apellido_Paterno, Apellido_Materno, Carrera, Semestre, Materia,
         Calificacion_Unidad_1, Calificacion_Unidad_2, Calificacion_Unidad_3, 
-        Calificacion_Unidad_4, Calificacion_Unidad_5
+        Calificacion_Unidad_4, Calificacion_Unidad_5, Discapacidad
     FROM Estudiantes
     WHERE Num_Control = ?
     """
@@ -307,55 +383,70 @@ def obtener_datos_estudiante(num_control):
 
 def importar_datos_a_sql(archivo_path, nombre_tabla, user_id):
   
+    # Columnas que SIEMPRE deben estar
     COLUMNAS_BASE = ['Num_Control', 'Apellido_Paterno', 'Apellido_Materno', 'Nombre', 'Carrera', 'Semestre']
     
-   
-    COLUMNAS_ACADEMICAS_DEFECTO = {
+    # Columnas que deben tener un valor por defecto si faltan en el archivo
+    # Se agregó 'Discapacidad'
+    COLUMNAS_FACTORES = [
+        'Materia', 'Calificacion_Unidad_1', 'Calificacion_Unidad_2', 'Calificacion_Unidad_3', 
+        'Calificacion_Unidad_4', 'Calificacion_Unidad_5', 'Asistencia_Porcentaje',
+        'Factor_Academico', 'Factor_Psicosocial', 'Factor_Economico',
+        'Factor_Institucional', 'Factor_Tecnologico', 'Factor_Contextual', 'Discapacidad' 
+    ]
+    
+    # Valores por defecto
+    # Se agregó valor por defecto para 'Discapacidad'
+    VALORES_DEFECTO = {
         'Materia': 'Sin Asignar',
         'Calificacion_Unidad_1': 0.0, 'Calificacion_Unidad_2': 0.0, 'Calificacion_Unidad_3': 0.0,
-        'Calificacion_Unidad_4': 0.0, 'Calificacion_Unidad_5': 0.0, 'Asistencia_Porcentaje': 0.0
-    }
-    COLUMNAS_FACTORES_DEFECTO = {
+        'Calificacion_Unidad_4': 0.0, 'Calificacion_Unidad_5': 0.0, 'Asistencia_Porcentaje': 0.0,
         'Factor_Academico': 0, 'Factor_Psicosocial': 0, 'Factor_Economico': 0,
-        'Factor_Institucional': 0, 'Factor_Tecnologico': 0, 'Factor_Contextual': 0
+        'Factor_Institucional': 0, 'Factor_Tecnologico': 0, 'Factor_Contextual': 0,
+        'Discapacidad': 'Ninguna'
     }
-    
+
     try:
-      
         if archivo_path.lower().endswith(('.xlsx', '.xls')):
             df = pd.read_excel(archivo_path, sheet_name=0)
         elif archivo_path.lower().endswith('.csv'):
-            try:
-                df = pd.read_csv(archivo_path, encoding='utf-8')
-            except UnicodeDecodeError:
-                df = pd.read_csv(archivo_path, encoding='latin1')
+            df = pd.read_csv(archivo_path)
         else:
-            messagebox.showerror("Error", "Formato de archivo no soportado. Use .xlsx, .xls o .csv.")
+            messagebox.showerror("Error de Formato", "El archivo debe ser CSV o Excel.")
             return
-
         
+        # 1. Verificar las columnas principales
         if not all(col in df.columns for col in COLUMNAS_BASE):
             messagebox.showerror("Error de Columnas", 
                                  f"El archivo debe contener las siguientes 6 columnas base: {', '.join(COLUMNAS_BASE)}. Revise nombres exactos.")
             return
 
-      
-        df_final = df[COLUMNAS_BASE].copy()
+        # 2. Seleccionar todas las columnas presentes que necesitamos
+        columnas_existentes = COLUMNAS_BASE + [c for c in COLUMNAS_FACTORES if c in df.columns]
+        df_final = df[columnas_existentes].copy()
         
-     
+        # 3. Aplicar valores por defecto a las columnas que FALTARON
+        for col in COLUMNAS_FACTORES:
+            if col not in df_final.columns:
+                df_final[col] = VALORES_DEFECTO[col]
+        
+        # 4. Asegurar el tipo de dato de Semestre
         df_final['Semestre'] = df_final['Semestre'].astype(int)
         
-        
-        for col, val in COLUMNAS_ACADEMICAS_DEFECTO.items():
-            df_final[col] = val
-        for col, val in COLUMNAS_FACTORES_DEFECTO.items():
-            df_final[col] = val
-        
-        
+        # 5. Asegurar tipos de las columnas numéricas para SQL (opcional, pero buena práctica)
+        # Forzar las calificaciones a float
+        for i in range(1, 6):
+            col = f'Calificacion_Unidad_{i}'
+            df_final[col] = pd.to_numeric(df_final[col], errors='coerce').fillna(VALORES_DEFECTO[col])
+        # Forzar los factores a int
+        for col in [f for f in COLUMNAS_FACTORES if f.startswith('Factor_')]:
+            df_final[col] = pd.to_numeric(df_final[col], errors='coerce').fillna(VALORES_DEFECTO[col]).astype(int)
+            
+        # 6. Insertar en SQL
         df_final.to_sql(nombre_tabla, con=engine, if_exists='append', index=False, method='multi')
         
-        log_actividad(user_id, 'IMPORT_DATA', f"Importadas {len(df_final)} filas (Solo 6 columnas principales) desde {archivo_path}")
-        messagebox.showinfo("Importación Exitosa", f"¡{len(df_final)} filas insertadas en SQL Server! Las calificaciones y factores se inicializaron a 0.")
+        log_actividad(user_id, 'IMPORT_DATA', f"Importadas {len(df_final)} filas. Columnas leídas: {', '.join(df_final.columns.tolist())}")
+        messagebox.showinfo("Importación Exitosa", f"¡{len(df_final)} filas insertadas en SQL Server!")
 
     except FileNotFoundError:
         messagebox.showerror("Error", f"El archivo no fue encontrado.")
@@ -364,7 +455,8 @@ def importar_datos_a_sql(archivo_path, nombre_tabla, user_id):
         if 'La conversión del valor varchar' in error_msg:
              messagebox.showerror("Error Crítico de Tipo de Dato", 
                                  "Error de conversión: ¡AÚN DEBE CORREGIR LA TABLA EN SQL SERVER! "
-                                 "Carrera y Semestre tienen tipos invertidos. Ejecute el script SQL proporcionado.")
+                                 "Carrera y Semestre tienen tipos invertidos. Ejecute el script SQL proporcionado."
+             )
         else:
             messagebox.showerror("Error de Importación", f"Ocurrió un error: {error_msg}. Revise su archivo y los tipos de datos en la BD.")
 
@@ -409,13 +501,27 @@ def exportar_datos_sql(formato, user_id):
     except Exception as e:
         messagebox.showerror("Error de Exportación", f"Ocurrió un error al exportar los datos: {e}")
 
+# MODIFICACIÓN CLAVE: Ahora devuelve la figura Y los datos de los estudiantes
 def generar_pareto_factores(user_id, carrera=None, semestre=None, materia=None, num_control_filtro=None):
     factores = ['Factor_Academico', 'Factor_Psicosocial', 'Factor_Economico', 
                 'Factor_Institucional', 'Factor_Tecnologico', 'Factor_Contextual']
     
  
     columnas_suma = [f'SUM(CAST({f} AS INT)) AS {f}' for f in factores]
-    sql_query = f"SELECT {', '.join(columnas_suma)} FROM Estudiantes"
+    
+    # Consulta para el Pareto: suma de factores
+    sql_pareto_query = f"SELECT {', '.join(columnas_suma)} FROM Estudiantes"
+    
+    # Consulta para la lista de estudiantes (Num_Control, Nombre, Apellidos, Semestre, Carrera)
+    sql_estudiantes_query = """
+        SELECT Num_Control, Nombre, Apellido_Paterno, Apellido_Materno, Semestre, Carrera
+        FROM Estudiantes
+        WHERE ({}) > 0
+    """
+    columnas_a_sumar = [f'ISNULL(CAST({f} AS INT), 0)' for f in factores]
+    suma_factores_check = " + ".join(columnas_a_sumar)
+    sql_estudiantes_query = sql_estudiantes_query.format(suma_factores_check)
+    
     
     condiciones = []
     if carrera:
@@ -430,19 +536,24 @@ def generar_pareto_factores(user_id, carrera=None, semestre=None, materia=None, 
         condiciones.append(f"Materia = '{materia}'") 
     
     if num_control_filtro:
+        # Si es un alumno, solo muestra sus datos y el pareto se basa en él
         condiciones = [f"Num_Control = '{num_control_filtro}'"]
         log_detalle = f"Consulta Pareto por Alumno: {num_control_filtro}"
     else:
         log_detalle = f"Consulta Pareto (Filtros: C={carrera}, S={semestre}, M={materia})"
         
     if condiciones:
-        sql_query += " WHERE " + " AND ".join(condiciones)
+        where_clause = " WHERE " + " AND ".join(condiciones)
+        sql_pareto_query += where_clause
+        sql_estudiantes_query += " AND " + " AND ".join(condiciones)
+
 
     try:
-        df = pd.read_sql(sql_query, engine)
+        # 1. Obtener datos para el gráfico de Pareto
+        df_pareto = pd.read_sql(sql_pareto_query, engine)
         log_actividad(user_id, 'CONSULTA_PARETO', log_detalle)
         
-        df_factores = df.T.rename(columns={0: 'Frecuencia'})
+        df_factores = df_pareto.T.rename(columns={0: 'Frecuencia'})
         df_factores = df_factores[df_factores['Frecuencia'] > 0]
         
         nombres_grafico = {
@@ -455,7 +566,7 @@ def generar_pareto_factores(user_id, carrera=None, semestre=None, materia=None, 
         total_frecuencia = df_factores['Frecuencia'].sum()
         
         if total_frecuencia == 0:
-            return None, "No se encontraron factores de riesgo marcados para este grupo/estudiante."
+            return None, pd.DataFrame(), "No se encontraron factores de riesgo marcados para este grupo/estudiante."
 
         df_factores['Porcentaje'] = (df_factores['Frecuencia'] / total_frecuencia) * 100
         df_factores['Acumulado'] = df_factores['Porcentaje'].cumsum()
@@ -478,11 +589,17 @@ def generar_pareto_factores(user_id, carrera=None, semestre=None, materia=None, 
         plt.title("Análisis de Pareto: Factores de Riesgo")
         fig.tight_layout()
         
-        return fig, None
+        # 2. Obtener la lista de estudiantes
+        df_estudiantes = pd.read_sql(sql_estudiantes_query, engine)
+        # Combinar nombre y apellidos para la presentación en el Treeview
+        df_estudiantes['Nombre Completo'] = df_estudiantes['Nombre'] + ' ' + df_estudiantes['Apellido_Paterno'] + ' ' + df_estudiantes['Apellido_Materno']
+        df_estudiantes = df_estudiantes[['Num_Control', 'Nombre Completo', 'Semestre', 'Carrera']]
+        
+        return fig, df_estudiantes, None
 
     except Exception as e:
         log_actividad(user_id, 'ERROR_CONSULTA', f"Error en Pareto: {e}")
-        return None, f"Error al consultar o generar gráfico: {e}"
+        return None, pd.DataFrame(), f"Error al consultar o generar gráfico: {e}"
 
 def obtener_registro_auditoria():
     """
@@ -527,59 +644,69 @@ def obtener_registro_auditoria():
         if conn: conn.close()
 
 
-# =========================================================================
-# 🖼️ CLASES DE VENTANAS (GUI)
-# =========================================================================
+# [ ... EL CÓDIGO DE LAS CLASES StudentRegistrationWindow, TeacherRegistrationWindow, LoginWindow ES EL MISMO ... ]
 
 class StudentRegistrationWindow(tk.Toplevel):
     """Ventana de registro inicial para nuevos estudiantes."""
     def __init__(self, master):
         super().__init__(master)
+        self.master = master
         self.title("Registro de Estudiante")
-        self.geometry("400x380")
+        self.geometry("400x440") # Ajuste de tamaño
         self.resizable(False, False)
         self.grab_set()
+        
+        # Aplicar el tema actual
+        master.apply_theme_settings() 
         self.create_widgets()
+        master.update_font_size(self) # Actualizar fuentes
 
     def create_widgets(self):
+        # Usar fondo blanco o negro según el modo invertido
+        bg_color = 'white' if not COLOR_INVERTED else 'black'
+        fg_color = 'black' if not COLOR_INVERTED else 'white'
+        
+        self.config(bg=bg_color)
+        
         main_frame = ttk.Frame(self, padding="15")
         main_frame.pack(fill='both', expand=True)
 
         ttk.Label(main_frame, text="**REGISTRO DE ESTUDIANTE**", font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=2, pady=10)
 
         fields = [
-            ("No. Control:", "num_control", 1, 'entry'), 
-            ("Nombre(s):", "nombre", 2, 'entry'),
-            ("Apellido Paterno:", "apellido_p", 3, 'entry'), 
-            ("Apellido Materno:", "apellido_m", 4, 'entry'), 
-            ("Carrera:", "carrera", 5, 'combobox'), 
-            ("Semestre:", "semestre", 6, 'combobox'), 
-            ("Contraseña:", "contrasena", 7, 'entry')
+            ("No. Control:", "num_control", 1, 'entry', ''), 
+            ("Nombre(s):", "nombre", 2, 'entry', ''),
+            ("Apellido Paterno:", "apellido_p", 3, 'entry', ''), 
+            ("Apellido Materno:", "apellido_m", 4, 'entry', ''), 
+            ("Carrera:", "carrera", 5, 'combobox', CARRERAS_ITT), 
+            ("Semestre:", "semestre", 6, 'combobox', SEMESTRES_LIST), 
+            ("Discapacidad:", "discapacidad", 7, 'combobox', DISCAPACIDADES_LIST), # <--- NUEVO CAMPO
+            ("Contraseña:", "contrasena", 8, 'entry', '*')
         ]
 
         self.reg_vars = {}
-        for i, (label_text, var_name, row, widget_type) in enumerate(fields):
-            ttk.Label(main_frame, text=label_text).grid(row=row, column=0, padx=5, pady=5, sticky='w')
+        for i, (label_text, var_name, row, widget_type, values) in enumerate(fields):
+            label = ttk.Label(main_frame, text=label_text)
+            label.grid(row=row, column=0, padx=5, pady=5, sticky='w')
+            
             var = tk.StringVar()
             self.reg_vars[var_name] = var
             
             if widget_type == 'entry':
                 show = '*' if var_name == 'contrasena' else ''
-                ttk.Entry(main_frame, textvariable=var, width=30, show=show).grid(row=row, column=1, padx=5, pady=5, sticky='w')
+                entry = ttk.Entry(main_frame, textvariable=var, width=30, show=show)
+                entry.grid(row=row, column=1, padx=5, pady=5, sticky='w')
+                if var_name == 'num_control': label.configure(underline=0); entry.focus() # Access Key + Focus
             elif widget_type == 'combobox': 
-                if var_name == 'carrera':
-                    combo = ttk.Combobox(main_frame, textvariable=var, values=CARRERAS_ITT, width=28, state='readonly')
-                    combo.set(CARRERAS_ITT[0]) 
-                elif var_name == 'semestre':
-                    combo = ttk.Combobox(main_frame, textvariable=var, values=SEMESTRES_LIST, width=28, state='readonly')
-                    combo.set(SEMESTRES_LIST[0]) 
+                combo = ttk.Combobox(main_frame, textvariable=var, values=values, width=28, state='readonly')
+                combo.set(values[0] if values else '') 
                 combo.grid(row=row, column=1, padx=5, pady=5, sticky='w')
 
         btn_frame = ttk.Frame(main_frame)
-        btn_frame.grid(row=8, column=0, columnspan=2, pady=20)
+        btn_frame.grid(row=9, column=0, columnspan=2, pady=20)
         
-        ttk.Button(btn_frame, text="Registrarse", command=self.handle_registration).pack(side=tk.LEFT, padx=10)
-        ttk.Button(btn_frame, text="Cerrar", command=self.destroy).pack(side=tk.LEFT, padx=10)
+        ttk.Button(btn_frame, text="Registrarse", command=self.handle_registration, underline=0).pack(side=tk.LEFT, padx=10) # Access Key R
+        ttk.Button(btn_frame, text="Cerrar", command=self.destroy, underline=0).pack(side=tk.LEFT, padx=10) # Access Key C
         
     def handle_registration(self):
         try:
@@ -589,13 +716,15 @@ class StudentRegistrationWindow(tk.Toplevel):
             apellido_m = self.reg_vars['apellido_m'].get().strip()
             carrera = self.reg_vars['carrera'].get().strip() 
             semestre_str = self.reg_vars['semestre'].get().strip()
+            discapacidad = self.reg_vars['discapacidad'].get().strip() # <--- NUEVO VALOR
             contrasena = self.reg_vars['contrasena'].get().strip()
 
             if not all([num_control, nombre, apellido_p, carrera, semestre_str, contrasena]):
-                messagebox.showwarning("Advertencia", "Todos los campos son obligatorios.")
+                messagebox.showwarning("Advertencia", "Todos los campos principales son obligatorios.")
                 return
 
-            resultado = registrar_estudiante_usuario(num_control, nombre, apellido_p, apellido_m, carrera, semestre_str, contrasena)
+            # Se pasa el campo 'discapacidad'
+            resultado = registrar_estudiante_usuario(num_control, nombre, apellido_p, apellido_m, carrera, semestre_str, contrasena, discapacidad)
             
             if "Error" in resultado:
                 messagebox.showerror("Error de Registro", resultado)
@@ -609,39 +738,62 @@ class StudentRegistrationWindow(tk.Toplevel):
 class TeacherRegistrationWindow(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
+        self.master = master
         self.title("Registro de Profesor")
-        self.geometry("400x280")
+        self.geometry("400x320") # Ajuste de tamaño
         self.resizable(False, False)
         self.grab_set()
+        
+        # Aplicar el tema actual
+        master.apply_theme_settings()
         self.create_widgets()
+        master.update_font_size(self) # Actualizar fuentes
 
     def create_widgets(self):
+        # Usar fondo blanco o negro según el modo invertido
+        bg_color = 'white' if not COLOR_INVERTED else 'black'
+        fg_color = 'black' if not COLOR_INVERTED else 'white'
+        
+        self.config(bg=bg_color)
+        
         main_frame = ttk.Frame(self, padding="15")
         main_frame.pack(fill='both', expand=True)
 
         ttk.Label(main_frame, text="**REGISTRO DE PROFESOR**", font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=2, pady=10)
 
         fields = [
-            ("Usuario (Ej. No. Empleado):", "num_control", 1, ''), 
-            ("Nombre(s):", "nombre", 2, ''),
-            ("Apellido Paterno:", "apellido_p", 3, ''), 
-            ("Apellido Materno:", "apellido_m", 4, ''), 
-            ("Contraseña:", "contrasena", 5, '*')
+            ("Usuario (Ej. No. Empleado):", "num_control", 1, '', None), 
+            ("Nombre(s):", "nombre", 2, '', None),
+            ("Apellido Paterno:", "apellido_p", 3, '', None), 
+            ("Apellido Materno:", "apellido_m", 4, '', None), 
+            ("Discapacidad:", "discapacidad", 5, 'combobox', DISCAPACIDADES_LIST), # <--- NUEVO CAMPO
+            ("Contraseña:", "contrasena", 6, '*', None)
         ]
 
         self.reg_vars = {}
-        for i, (label_text, var_name, row, show_char) in enumerate(fields):
-            ttk.Label(main_frame, text=label_text).grid(row=row, column=0, padx=5, pady=5, sticky='w')
+        for i, (label_text, var_name, row, show_char, values) in enumerate(fields):
+            label = ttk.Label(main_frame, text=label_text)
+            label.grid(row=row, column=0, padx=5, pady=5, sticky='w')
+            
             var = tk.StringVar()
             self.reg_vars[var_name] = var
-            show = '*' if var_name == 'contrasena' else ''
-            ttk.Entry(main_frame, textvariable=var, width=30, show=show).grid(row=row, column=1, padx=5, pady=5, sticky='w')
+
+            if var_name == 'discapacidad':
+                combo = ttk.Combobox(main_frame, textvariable=var, values=values, width=28, state='readonly')
+                combo.set(values[0] if values else '') 
+                combo.grid(row=row, column=1, padx=5, pady=5, sticky='w')
+            else:
+                show = '*' if var_name == 'contrasena' else ''
+                entry = ttk.Entry(main_frame, textvariable=var, width=30, show=show)
+                entry.grid(row=row, column=1, padx=5, pady=5, sticky='w')
+                if var_name == 'num_control': label.configure(underline=0); entry.focus() # Access Key + Focus
+
 
         btn_frame = ttk.Frame(main_frame)
-        btn_frame.grid(row=6, column=0, columnspan=2, pady=20)
+        btn_frame.grid(row=7, column=0, columnspan=2, pady=20)
         
-        ttk.Button(btn_frame, text="Registrarse", command=self.handle_registration).pack(side=tk.LEFT, padx=10)
-        ttk.Button(btn_frame, text="Cerrar", command=self.destroy).pack(side=tk.LEFT, padx=10)
+        ttk.Button(btn_frame, text="Registrarse", command=self.handle_registration, underline=0).pack(side=tk.LEFT, padx=10) # Access Key R
+        ttk.Button(btn_frame, text="Cerrar", command=self.destroy, underline=0).pack(side=tk.LEFT, padx=10) # Access Key C
         
     def handle_registration(self):
         try:
@@ -649,13 +801,15 @@ class TeacherRegistrationWindow(tk.Toplevel):
             nombre = self.reg_vars['nombre'].get().strip()
             apellido_p = self.reg_vars['apellido_p'].get().strip()
             apellido_m = self.reg_vars['apellido_m'].get().strip()
+            discapacidad = self.reg_vars['discapacidad'].get().strip() # <--- NUEVO VALOR
             contrasena = self.reg_vars['contrasena'].get().strip()
 
             if not all([num_control, nombre, apellido_p, contrasena]):
-                messagebox.showwarning("Advertencia", "Todos los campos son obligatorios.")
+                messagebox.showwarning("Advertencia", "Todos los campos principales son obligatorios.")
                 return
 
-            resultado = registrar_profesor_usuario(num_control, nombre, apellido_p, apellido_m, contrasena)
+            # Se pasa el campo 'discapacidad'
+            resultado = registrar_profesor_usuario(num_control, nombre, apellido_p, apellido_m, contrasena, discapacidad)
             
             if "Error" in resultado:
                 messagebox.showerror("Error de Registro", resultado)
@@ -672,7 +826,9 @@ class LoginWindow(tk.Toplevel):
         super().__init__(master)
         self.title("Inicio de Sesión")
         self.master = master 
-        self.geometry("350x200")
+        self.geometry("400x180") # Ajuste de tamaño
+        self.master.withdraw()
+        self.deiconify()
         
         
         self.protocol("WM_DELETE_WINDOW", self.master.quit) 
@@ -686,17 +842,28 @@ class LoginWindow(tk.Toplevel):
         y = (self.winfo_screenheight() // 2) - (height // 2)
         self.geometry(f'{width}x{height}+{x}+{y}')
         
+        # Aplicar el tema actual
+        master.apply_theme_settings()
         self.create_widgets()
+        master.update_font_size(self) # Actualizar fuentes
 
     def create_widgets(self):
+        # Usar fondo blanco o negro según el modo invertido
+        bg_color = 'white' if not COLOR_INVERTED else 'black'
+        fg_color = 'black' if not COLOR_INVERTED else 'white'
+        
+        self.config(bg=bg_color)
+        
         cred_frame = ttk.Frame(self, padding="10")
         cred_frame.grid(row=0, column=0, columnspan=2)
 
-        ttk.Label(cred_frame, text="Usuario:").grid(row=0, column=0, padx=10, pady=5, sticky='w')
+        ttk.Label(cred_frame, text="Usuario:", underline=0).grid(row=0, column=0, padx=10, pady=5, sticky='w') # Access Key U
         self.user_var = tk.StringVar(value='ProfesorITT')
-        ttk.Entry(cred_frame, textvariable=self.user_var, width=25).grid(row=0, column=1, padx=10, pady=5)
+        user_entry = ttk.Entry(cred_frame, textvariable=self.user_var, width=25)
+        user_entry.grid(row=0, column=1, padx=10, pady=5)
+        user_entry.focus()
 
-        ttk.Label(cred_frame, text="Contraseña:").grid(row=1, column=0, padx=10, pady=5, sticky='w')
+        ttk.Label(cred_frame, text="Contraseña:", underline=0).grid(row=1, column=0, padx=10, pady=5, sticky='w') # Access Key C
         self.pass_var = tk.StringVar(value='123')
         self.pass_entry = ttk.Entry(cred_frame, textvariable=self.pass_var, show="*", width=25)
         self.pass_entry.grid(row=1, column=1, padx=10, pady=5)
@@ -705,9 +872,9 @@ class LoginWindow(tk.Toplevel):
         btn_frame = ttk.Frame(self)
         btn_frame.grid(row=1, column=0, columnspan=2, pady=10)
 
-        ttk.Button(btn_frame, text="Entrar", command=self.handle_login).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Registrar Alumno", command=self.open_student_registration).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Registrar Maestro", command=self.open_teacher_registration).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Entrar", command=self.handle_login, underline=0).pack(side=tk.LEFT, padx=5) # Access Key E
+        ttk.Button(btn_frame, text="Registrar Alumno", command=self.open_student_registration, underline=10).pack(side=tk.LEFT, padx=5) # Access Key A
+        ttk.Button(btn_frame, text="Registrar Maestro", command=self.open_teacher_registration, underline=10).pack(side=tk.LEFT, padx=5) # Access Key M
 
     def handle_login(self):
         username = self.user_var.get().strip()
@@ -747,44 +914,116 @@ class CalidadApp(ttk.Frame):
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(pady=10, padx=10, fill='both', expand=True)
 
-       
+        
+        # 1. Pestaña de Perfil (Primera para todos)
         self.tab_perfil = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_perfil, text='Perfil / Actualizar')
+        self.notebook.add(self.tab_perfil, text='Perfil / Actualizar', underline=0) # Access Key P
         self.crear_tab_perfil()
         
        
         if self.role_id == 1:
+            # 2. Pestañas de Profesor
             self.tab_registro = ttk.Frame(self.notebook)
-            self.notebook.add(self.tab_registro, text='Registro Manual')
+            self.notebook.add(self.tab_registro, text='Registro Manual', underline=0) # Access Key R
             self.crear_tab_registro()
 
             self.tab_pareto = ttk.Frame(self.notebook)
-            self.notebook.add(self.tab_pareto, text='Análisis de Riesgo (Pareto)')
-            self.crear_tab_pareto()
+            self.notebook.add(self.tab_pareto, text='Análisis de Riesgo (Pareto)', underline=0) # Access Key A
+            self.crear_tab_pareto() 
             
             self.tab_importar = ttk.Frame(self.notebook)
-            self.notebook.add(self.tab_importar, text='Importar/Exportar')
+            self.notebook.add(self.tab_importar, text='Importar/Exportar', underline=0) # Access Key I
             self.crear_tab_importar()
             
             self.tab_auditoria = ttk.Frame(self.notebook)
-            self.notebook.add(self.tab_auditoria, text='Registro de Actividad')
+            self.notebook.add(self.tab_auditoria, text='Registro de Actividad', underline=0) # Access Key R
             self.crear_tab_auditoria()
             
         
         elif self.role_id == 2:
+            # 2. Pestaña de Estudiante
             self.tab_datos = ttk.Frame(self.notebook)
-            self.notebook.add(self.tab_datos, text='Mis Datos Académicos')
+            self.notebook.add(self.tab_datos, text='Mis Datos Académicos', underline=0) # Access Key M
             self.crear_tab_datos_alumno()
+            
+        # 3. Pestaña de Configuración (Última) <-- CAMBIO APLICADO AQUÍ
+        self.tab_configuracion = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_configuracion, text='⚙️ Configuración', underline=0) # Access Key C
+        self.crear_tab_configuracion()
+        
 
     def cerrar_sesion(self):
-        log_actividad(self.user_id, 'LOGOUT', 'Cierre de sesión manual.')
-        
+        log_actividad(self.user_id, 'LOGOUT', 'Cierre de sesión manual.')        
+        self.destroy() 
+        self.master.login_window = LoginWindow(self.master) 
+        self.master.withdraw() 
         self.master.main_window = None
-        self.master.login_window = LoginWindow(self.master)
-        self.master.geometry("350x200")
-        self.destroy()
 
-    #Pestaña de Registro Manual
+    # ====================================================================
+    # PESTAÑA DE CONFIGURACIÓN
+    # ====================================================================
+    def crear_tab_configuracion(self):
+        global CURRENT_FONT_SIZE, COLOR_INVERTED, ZOOM_LEVEL
+        
+        frame = ttk.Frame(self.tab_configuracion, padding="20")
+        frame.pack(fill='both', expand=True)
+        
+        ttk.Label(frame, text="**CONFIGURACIÓN DE ACCESIBILIDAD**", font=('Arial', 14, 'bold')).pack(pady=15)
+        
+        # -------------------
+        # 1. Tamaño de Fuente
+        # -------------------
+        font_frame = ttk.LabelFrame(frame, text="Ajuste de Tamaño de Fuente", padding=10)
+        font_frame.pack(pady=10, padx=50, fill='x')
+        
+        ttk.Label(font_frame, text="Tamaño Actual:").pack(side=tk.LEFT, padx=10)
+        
+        self.current_font_label = ttk.Label(font_frame, text=f"{CURRENT_FONT_SIZE} puntos", font=('Arial', 10, 'bold'))
+        self.current_font_label.pack(side=tk.LEFT)
+        
+        ttk.Button(font_frame, text="Aumentar (A)", command=lambda: self.master.adjust_font(1, self.current_font_label), underline=10).pack(side=tk.LEFT, padx=10)
+        ttk.Button(font_frame, text="Disminuir (D)", command=lambda: self.master.adjust_font(-1, self.current_font_label), underline=10).pack(side=tk.LEFT, padx=10)
+        ttk.Button(font_frame, text="Reiniciar (R)", command=lambda: self.master.adjust_font(0, self.current_font_label), underline=0).pack(side=tk.LEFT, padx=10)
+        
+        # -------------------
+        # 2. Inversión de Colores
+        # -------------------
+        color_frame = ttk.LabelFrame(frame, text="Inversión de Colores (Alto Contraste)", padding=10)
+        color_frame.pack(pady=10, padx=50, fill='x')
+        
+        self.color_var = tk.BooleanVar(value=COLOR_INVERTED)
+        self.color_check = ttk.Checkbutton(color_frame, 
+                                           text="Activar Inversión de Colores (I)", 
+                                           variable=self.color_var,
+                                           command=self.handle_color_inversion,
+                                           underline=24)
+        self.color_check.pack(padx=10)
+        
+        # -------------------
+        # 3. Lupa de Zoom (Escalado de la Aplicación)
+        # -------------------
+        zoom_frame = ttk.LabelFrame(frame, text="Lupa de Zoom (Escala de Pantalla)", padding=10)
+        zoom_frame.pack(pady=10, padx=50, fill='x')
+        
+        ttk.Label(zoom_frame, text="Nivel de Zoom:").pack(side=tk.LEFT, padx=10)
+        
+        self.zoom_level_label = ttk.Label(zoom_frame, text=f"{ZOOM_LEVEL}%", font=('Arial', 10, 'bold'))
+        self.zoom_level_label.pack(side=tk.LEFT)
+        
+        ttk.Button(zoom_frame, text="Zoom + (Z)", command=lambda: self.master.adjust_zoom(10, self.zoom_level_label), underline=6).pack(side=tk.LEFT, padx=10)
+        ttk.Button(zoom_frame, text="Zoom - (N)", command=lambda: self.master.adjust_zoom(-10, self.zoom_level_label), underline=6).pack(side=tk.LEFT, padx=10)
+        ttk.Button(zoom_frame, text="Restablecer (T)", command=lambda: self.master.adjust_zoom(0, self.zoom_level_label), underline=0).pack(side=tk.LEFT, padx=10)
+        
+    def handle_color_inversion(self):
+        """Maneja el cambio de la variable global de inversión de color y aplica el tema."""
+        global COLOR_INVERTED
+        COLOR_INVERTED = self.color_var.get()
+        self.master.apply_theme_settings()
+        self.master.update_font_size(self.master.main_window) # Forzar re-render de Treeviews, etc.
+        
+    # ====================================================================
+    # PESTAÑA DE REGISTRO MANUAL
+    # ====================================================================
     
     def crear_tab_registro(self):
         frame = ttk.Frame(self.tab_registro, padding="15")
@@ -794,30 +1033,29 @@ class CalidadApp(ttk.Frame):
 
         self.entry_vars = {}
         fields = [
-            ("No. Control:", "Num_Control", 1, 'entry'),
-            ("Apellido Paterno:", "Apellido_Paterno", 2, 'entry'),
-            ("Apellido Materno:", "Apellido_Materno", 3, 'entry'),
-            ("Nombre(s):", "Nombre", 4, 'entry'),
-            ("Carrera:", "Carrera", 5, 'combobox'),
-            ("Semestre:", "Semestre", 6, 'combobox'),
-            ("Materia:", "Materia", 7, 'entry'),
-            ("Asistencia %:", "Asistencia_Porcentaje", 8, 'entry')
+            ("No. Control:", "Num_Control", 1, 'entry', None),
+            ("Apellido Paterno:", "Apellido_Paterno", 2, 'entry', None),
+            ("Apellido Materno:", "Apellido_Materno", 3, 'entry', None),
+            ("Nombre(s):", "Nombre", 4, 'entry', None),
+            ("Carrera:", "Carrera", 5, 'combobox', CARRERAS_ITT),
+            ("Semestre:", "Semestre", 6, 'combobox', SEMESTRES_LIST),
+            ("Materia:", "Materia", 7, 'entry', None),
+            ("Asistencia %:", "Asistencia_Porcentaje", 8, 'entry', None),
+            ("Discapacidad:", "Discapacidad", 9, 'combobox', DISCAPACIDADES_LIST) # <--- NUEVO CAMPO
         ]
 
-        for i, (label_text, var_name, row, widget_type) in enumerate(fields):
-            ttk.Label(frame, text=label_text).grid(row=row, column=0, padx=5, pady=2, sticky='w')
+        for i, (label_text, var_name, row, widget_type, values) in enumerate(fields):
+            label = ttk.Label(frame, text=label_text)
+            label.grid(row=row, column=0, padx=5, pady=2, sticky='w')
+            
             var = tk.StringVar()
             self.entry_vars[var_name] = var
             
             if widget_type == 'entry':
                 ttk.Entry(frame, textvariable=var, width=30).grid(row=row, column=1, padx=5, pady=2, sticky='w')
             elif widget_type == 'combobox': 
-                if var_name == 'Carrera':
-                    combo = ttk.Combobox(frame, textvariable=var, values=CARRERAS_ITT, width=28, state='readonly')
-                    combo.set(CARRERAS_ITT[0])
-                elif var_name == 'Semestre':
-                    combo = ttk.Combobox(frame, textvariable=var, values=SEMESTRES_LIST, width=28, state='readonly')
-                    combo.set(SEMESTRES_LIST[0])
+                combo = ttk.Combobox(frame, textvariable=var, values=values, width=28, state='readonly')
+                combo.set(values[0] if values else '')
                 combo.grid(row=row, column=1, padx=5, pady=2, sticky='w')
 
         # Calificaciones
@@ -831,7 +1069,7 @@ class CalidadApp(ttk.Frame):
 
         # Factores de Riesgo
         fact_frame = ttk.LabelFrame(frame, text="Factores de Riesgo")
-        fact_frame.grid(row=6, column=2, rowspan=3, padx=10, pady=5, sticky='n')
+        fact_frame.grid(row=6, column=2, rowspan=4, padx=10, pady=5, sticky='n')
         self.factor_vars = {}
         factores = ["Factor_Academico", "Factor_Psicosocial", "Factor_Economico", "Factor_Institucional", "Factor_Tecnologico", "Factor_Contextual"]
         nombres_fact = ["Académico", "Psicosocial", "Económico", "Institucional", "Tecnológico", "Contextual"]
@@ -842,9 +1080,9 @@ class CalidadApp(ttk.Frame):
 
        
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=9, column=0, columnspan=4, pady=20)
-        ttk.Button(btn_frame, text="Guardar Estudiante", command=self.guardar_estudiante).pack(padx=10)
-        ttk.Button(btn_frame, text="Limpiar", command=self.limpiar_registro).pack(padx=10)
+        btn_frame.grid(row=10, column=0, columnspan=4, pady=20)
+        ttk.Button(btn_frame, text="Guardar Estudiante", command=self.guardar_estudiante, underline=0).pack(padx=10, side=tk.LEFT) # Access Key G
+        ttk.Button(btn_frame, text="Limpiar", command=self.limpiar_registro, underline=0).pack(padx=10, side=tk.LEFT) # Access Key L
         
     def limpiar_registro(self):
         for var in self.entry_vars.values():
@@ -858,9 +1096,10 @@ class CalidadApp(ttk.Frame):
             datos_principales = [self.entry_vars[name].get().strip() for name in ['Num_Control', 'Apellido_Paterno', 'Apellido_Materno', 'Nombre', 'Carrera']]
             semestre_raw = self.entry_vars['Semestre'].get().strip()
             materia = self.entry_vars['Materia'].get().strip()
+            discapacidad = self.entry_vars['Discapacidad'].get().strip() # <--- NUEVO CAMPO
             
-            if not all(datos_principales) or not semestre_raw or not materia:
-                messagebox.showwarning("Advertencia", "Los campos principales (Control, Nombre, Apellidos, Carrera, Semestre, Materia) son obligatorios.")
+            if not all(datos_principales) or not semestre_raw or not materia or not discapacidad:
+                messagebox.showwarning("Advertencia", "Los campos principales (Control, Nombre, Apellidos, Carrera, Semestre, Materia, Discapacidad) son obligatorios.")
                 return
             
             #Validación y conversión de tipos
@@ -887,7 +1126,8 @@ class CalidadApp(ttk.Frame):
             factores = [self.factor_vars[name].get() for name in self.factor_vars.keys()]
 
            
-            datos_completos = datos_principales + calificaciones_finales + [asistencia_final] + factores
+            # ¡IMPORTANTE! Se agregó [discapacidad] al final
+            datos_completos = datos_principales + calificaciones_finales + [asistencia_final] + factores + [discapacidad]
             
             #Insertar en la base de datos
             insertar_registro_manual(datos_completos, self.user_id)
@@ -905,6 +1145,10 @@ class CalidadApp(ttk.Frame):
 
         self.perfil_vars = {}
         datos_estudiante = obtener_datos_estudiante(self.num_control) if self.role_id == 2 else None
+        
+        # Obtener Discapacidad para el perfil (usa una función específica ya que puede estar en Estudiantes o Usuarios)
+        discapacidad_usuario = obtener_discapacidad_usuario(self.num_control, self.role_id)
+
 
         ttk.Label(frame, text=f"**PERFIL DE USUARIO**", font=('Arial', 14, 'bold')).pack(pady=10)
         
@@ -915,7 +1159,8 @@ class CalidadApp(ttk.Frame):
             "Apellido Paterno:": datos_estudiante[1] if datos_estudiante and len(datos_estudiante) > 1 else "",
             "Apellido Materno:": datos_estudiante[2] if datos_estudiante and len(datos_estudiante) > 2 else "",
             "Carrera:": datos_estudiante[3] if datos_estudiante and len(datos_estudiante) > 3 else "N/A (Profesor)",
-            "Semestre:": datos_estudiante[4] if datos_estudiante and len(datos_estudiante) > 4 else "N/A (Profesor)"
+            "Semestre:": datos_estudiante[4] if datos_estudiante and len(datos_estudiante) > 4 else "N/A (Profesor)",
+            "Discapacidad:": discapacidad_usuario # <--- NUEVO CAMPO
         }
         
         fields = [
@@ -924,7 +1169,8 @@ class CalidadApp(ttk.Frame):
             ("Apellido Paterno:", "Apellido_Paterno"), 
             ("Apellido Materno:", "Apellido_Materno"), 
             ("Carrera:", "Carrera"), 
-            ("Semestre:", "Semestre")
+            ("Semestre:", "Semestre"),
+            ("Discapacidad:", "Discapacidad") # <--- NUEVO CAMPO
         ]
         
         for label_text, var_name in fields:
@@ -937,21 +1183,25 @@ class CalidadApp(ttk.Frame):
             self.perfil_vars[var_name] = var
             var.set(data_map.get(label_text, ""))
             
-            is_editable = var_name in ["Nombre", "Apellido_Paterno", "Apellido_Materno"]
+            is_editable = var_name in ["Nombre", "Apellido_Paterno", "Apellido_Materno", "Discapacidad"]
             state = 'normal' if is_editable and self.role_id == 2 else 'readonly'
             
-            ttk.Entry(sub_frame, textvariable=var, width=30, state=state).pack(side=tk.LEFT, fill='x', expand=True)
+            if var_name == "Discapacidad" and self.role_id == 2:
+                combo = ttk.Combobox(sub_frame, textvariable=var, values=DISCAPACIDADES_LIST, width=30, state='readonly')
+                combo.pack(side=tk.LEFT, fill='x', expand=True)
+            else:
+                ttk.Entry(sub_frame, textvariable=var, width=30, state=state).pack(side=tk.LEFT, fill='x', expand=True)
 
         if self.role_id == 1:
             ttk.Label(frame, text="Rol: Profesor", font=('Arial', 10, 'italic')).pack(pady=10, padx=50, anchor='w')
             
         if self.role_id == 2:
-            ttk.Label(frame, text="Solo puedes editar tu Nombre y Apellidos.", font=('Arial', 10, 'italic')).pack(pady=5, padx=50, anchor='w')
+            ttk.Label(frame, text="Solo puedes editar tu Nombre, Apellidos y Discapacidad.", font=('Arial', 10, 'italic')).pack(pady=5, padx=50, anchor='w')
        
              
         ttk.Separator(frame, orient='horizontal').pack(fill='x', pady=15)
-        ttk.Button(frame, text="Actualizar Datos", command=self.actualizar_perfil).pack(pady=5)
-        ttk.Button(frame, text="Cerrar Sesión", command=self.cerrar_sesion).pack(pady=5)
+        ttk.Button(frame, text="Actualizar Datos", command=self.actualizar_perfil, underline=0).pack(pady=5) # Access Key A
+        ttk.Button(frame, text="Cerrar Sesión", command=self.cerrar_sesion, underline=0).pack(pady=5) # Access Key C
 
     def actualizar_perfil(self):
         if self.role_id != 2:
@@ -961,12 +1211,13 @@ class CalidadApp(ttk.Frame):
         nombre = self.perfil_vars['Nombre'].get().strip()
         apellido_p = self.perfil_vars['Apellido_Paterno'].get().strip()
         apellido_m = self.perfil_vars['Apellido_Materno'].get().strip()
+        discapacidad = self.perfil_vars['Discapacidad'].get().strip() # <--- NUEVO CAMPO
         
-        if not all([nombre, apellido_p]):
-             messagebox.showwarning("Advertencia", "El nombre y el apellido paterno son obligatorios.")
+        if not all([nombre, apellido_p, discapacidad]):
+             messagebox.showwarning("Advertencia", "El nombre, el apellido paterno y la discapacidad son obligatorios.")
              return
         
-        nuevos_datos = [apellido_p, apellido_m, nombre]
+        nuevos_datos = [apellido_p, apellido_m, nombre, discapacidad] # <--- NUEVO CAMPO
         actualizar_datos_estudiante(self.num_control, nuevos_datos, self.user_id)
         
     #Pestaña de Datos Alumno
@@ -981,8 +1232,10 @@ class CalidadApp(ttk.Frame):
         datos = obtener_datos_estudiante(self.num_control)
 
         if datos:
+            # Se agregó "Discapacidad:" a la lista. Ahora son 12 campos.
             labels = ["Nombre:", "Apellido Paterno:", "Apellido Materno:", "Carrera:", "Semestre:", "Materia:", 
-                      "Calificación U1:", "Calificación U2:", "Calificación U3:", "Calificación U4:", "Calificación U5:"]
+                      "Calificación U1:", "Calificación U2:", "Calificación U3:", "Calificación U4:", "Calificación U5:",
+                      "Discapacidad:"] 
             
             
             info_frame = ttk.Frame(frame)
@@ -1001,38 +1254,105 @@ class CalidadApp(ttk.Frame):
         frame = ttk.Frame(self.tab_pareto, padding="10")
         frame.pack(fill='both', expand=True)
         
-        control_frame = ttk.LabelFrame(frame, text="Filtros")
+        # ** SCROLLBAR PARA LA PESTAÑA PRINCIPAL DEL PARETO **
+        # Este marco contenedor permite que todo el contenido se desplace
+        canvas = tk.Canvas(frame)
+        canvas.pack(side="left", fill="both", expand=True)
+        
+        vsb = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        vsb.pack(side="right", fill="y")
+        
+        canvas.configure(yscrollcommand=vsb.set)
+        
+        self.scrollable_frame = ttk.Frame(canvas)
+        # Se fija el ancho para que la barra lateral no comprima horizontalmente
+        # NOTA: Este ancho debe ajustarse según el nivel de zoom si se quiere un layout perfecto
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+        # 910 es el ancho que se ajusta a 950x700. Si el zoom cambia, este valor necesita ajustarse.
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw", width=910 * (ZOOM_LEVEL / 100.0))
+
+        # ** FIN DEL SCROLLBAR DE LA PESTAÑA **
+
+        
+        control_frame = ttk.LabelFrame(self.scrollable_frame, text="Filtros y Controles")
         control_frame.pack(pady=10, padx=10, fill='x')
         
         estado_filtro = 'disabled' if self.role_id == 2 else 'readonly'
         
-       
-        ttk.Label(control_frame, text="Carrera:").grid(row=0, column=0, padx=5, pady=5)
+        # Fila 0: Carrera y Semestre
+        ttk.Label(control_frame, text="Carrera:", underline=0).grid(row=0, column=0, padx=5, pady=5) # Access Key C
         self.pareto_carrera = tk.StringVar()
         combo_carrera = ttk.Combobox(control_frame, textvariable=self.pareto_carrera, values=CARRERAS_ITT, width=15, state=estado_filtro)
         combo_carrera.grid(row=0, column=1, padx=5, pady=5)
         
-      
-        ttk.Label(control_frame, text="Semestre:").grid(row=0, column=2, padx=5, pady=5)
+        ttk.Label(control_frame, text="Semestre:", underline=0).grid(row=0, column=2, padx=5, pady=5) # Access Key S
         self.pareto_semestre = tk.StringVar()
         combo_semestre = ttk.Combobox(control_frame, textvariable=self.pareto_semestre, values=SEMESTRES_LIST, width=15, state=estado_filtro)
         combo_semestre.grid(row=0, column=3, padx=5, pady=5)
         
-       
-        ttk.Label(control_frame, text="Materia:").grid(row=1, column=0, padx=5, pady=5)
+        # Fila 1: Materia y Botones
+        ttk.Label(control_frame, text="Materia:", underline=0).grid(row=1, column=0, padx=5, pady=5) # Access Key M
         self.pareto_materia = tk.StringVar()
         ttk.Entry(control_frame, textvariable=self.pareto_materia, width=15, state='disabled' if self.role_id == 2 else 'normal').grid(row=1, column=1, padx=5, pady=5)
 
-        ttk.Button(control_frame, text="Generar Gráfico", command=self.mostrar_pareto).grid(row=1, column=3, columnspan=2, padx=15, pady=5)
+        # Botones
+        ttk.Button(control_frame, text="Generar Gráfico", command=self.mostrar_pareto, underline=0).grid(row=1, column=2, padx=15, pady=5) # Access Key G
+        ttk.Button(control_frame, text="Limpiar Filtros", command=self.limpiar_filtros_pareto, underline=0).grid(row=1, column=3, padx=15, pady=5) # Access Key L
 
-        self.pareto_canvas_frame = ttk.Frame(frame)
-        self.pareto_canvas_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        # Marco para el Canvas de Pareto
+        self.pareto_canvas_frame = ttk.Frame(self.scrollable_frame, height=300)
+        self.pareto_canvas_frame.pack(fill='x', expand=False, padx=10, pady=5)
         self.pareto_fig_canvas = None
+        
+        # Marco y Treeview para la lista de alumnos
+        alumnos_frame = ttk.LabelFrame(self.scrollable_frame, text="Alumnos Incluidos en el Análisis")
+        alumnos_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        columns = ("Num_Control", "Nombre Completo", "Semestre", "Carrera")
+        self.tree_alumnos = ttk.Treeview(alumnos_frame, columns=columns, show="headings")
+        
+        self.tree_alumnos.heading("Num_Control", text="No. Control")
+        self.tree_alumnos.heading("Nombre Completo", text="Nombre y Apellidos")
+        self.tree_alumnos.heading("Semestre", text="Semestre")
+        self.tree_alumnos.heading("Carrera", text="Carrera")
+        
+        self.tree_alumnos.column("Num_Control", width=100, anchor='center')
+        self.tree_alumnos.column("Nombre Completo", width=300, anchor='w')
+        self.tree_alumnos.column("Semestre", width=80, anchor='center')
+        self.tree_alumnos.column("Carrera", width=150, anchor='w')
+        
+        # Scrollbar vertical para el Treeview (lista de alumnos)
+        vsb_alumnos = ttk.Scrollbar(alumnos_frame, orient="vertical", command=self.tree_alumnos.yview)
+        self.tree_alumnos.configure(yscrollcommand=vsb_alumnos.set)
+        
+        vsb_alumnos.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree_alumnos.pack(fill='both', expand=True)
+        
+    def limpiar_filtros_pareto(self):
+        """Limpia los campos de filtro de Carrera, Semestre y Materia."""
+        self.pareto_carrera.set('')
+        self.pareto_semestre.set('')
+        self.pareto_materia.set('')
+        
+        # Opcional: limpiar la gráfica y la tabla
+        for widget in self.pareto_canvas_frame.winfo_children():
+            widget.destroy()
+        for i in self.tree_alumnos.get_children():
+            self.tree_alumnos.delete(i)
+
 
     def mostrar_pareto(self):
         
+        # Limpiar el canvas y la tabla antes de la nueva consulta
         for widget in self.pareto_canvas_frame.winfo_children():
             widget.destroy()
+        for i in self.tree_alumnos.get_children():
+            self.tree_alumnos.delete(i)
         
         carrera = self.pareto_carrera.get().strip()
         semestre = self.pareto_semestre.get().strip()
@@ -1041,20 +1361,39 @@ class CalidadApp(ttk.Frame):
      
         if self.role_id == 2:
             num_control_filtro = self.num_control
+            # Si es alumno, ignora los filtros de la interfaz
             carrera, semestre, materia = None, None, None 
         else:
             num_control_filtro = None
 
-        fig, error_msg = generar_pareto_factores(self.user_id, carrera, semestre, materia, num_control_filtro)
+        # Llamada a la función de backend, que ahora devuelve fig, df_estudiantes, error_msg
+        fig, df_estudiantes, error_msg = generar_pareto_factores(self.user_id, carrera, semestre, materia, num_control_filtro)
         
         if error_msg:
             messagebox.showerror("Error de Gráfico", error_msg)
+            # Muestra un mensaje en la tabla
+            self.tree_alumnos.insert("", "end", values=(error_msg, "", "", ""))
             return
 
         if fig:
+            # 1. Mostrar Gráfico de Pareto
             self.pareto_fig_canvas = FigureCanvasTkAgg(fig, master=self.pareto_canvas_frame)
             self.pareto_fig_canvas.draw()
-            self.pareto_fig_canvas.get_tk_widget().pack(fill='both', expand=True)
+            # Usar pack, expand=False para que la gráfica no ocupe todo el espacio vertical del marco
+            self.pareto_fig_canvas.get_tk_widget().pack(fill='both', expand=False) 
+            
+            # 2. Mostrar la lista de alumnos
+            if df_estudiantes.empty:
+                 self.tree_alumnos.insert("", "end", values=("No hay alumnos con factores de riesgo en estos filtros.", "", "", ""))
+            else:
+                for index, row in df_estudiantes.iterrows():
+                    self.tree_alumnos.insert("", "end", values=(
+                        row['Num_Control'], 
+                        row['Nombre Completo'], 
+                        row['Semestre'], 
+                        row['Carrera']
+                    ))
+
 
     #Pestaña de Importar/Exportar
     
@@ -1067,12 +1406,12 @@ class CalidadApp(ttk.Frame):
             import_frame = ttk.LabelFrame(frame, text="Importar Datos de Estudiantes (CSV/Excel)")
             import_frame.pack(pady=20, padx=20, fill='x')
             
-            ttk.Label(import_frame, text="Archivo (CSV/Excel):").grid(row=0, column=0, padx=5, pady=5, sticky='w')
+            ttk.Label(import_frame, text="Archivo (CSV/Excel):", underline=0).grid(row=0, column=0, padx=5, pady=5, sticky='w') # Access Key A
             self.import_path_var = tk.StringVar()
             ttk.Entry(import_frame, textvariable=self.import_path_var, width=50, state='readonly').grid(row=0, column=1, padx=5, pady=5)
             
-            ttk.Button(import_frame, text="Seleccionar Archivo", command=self.seleccionar_archivo_import).grid(row=0, column=2, padx=5, pady=5)
-            ttk.Button(import_frame, text="Ejecutar Importación", command=self.ejecutar_importacion_handler).grid(row=1, column=1, columnspan=2, pady=10)
+            ttk.Button(import_frame, text="Seleccionar Archivo", command=self.seleccionar_archivo_import, underline=0).grid(row=0, column=2, padx=5, pady=5) # Access Key S
+            ttk.Button(import_frame, text="Ejecutar Importación", command=self.ejecutar_importacion_handler, underline=0).grid(row=1, column=1, columnspan=2, pady=10) # Access Key E
 
             #Sección Exportar
             export_frame = ttk.LabelFrame(frame, text="Exportar Datos de Estudiantes")
@@ -1081,8 +1420,8 @@ class CalidadApp(ttk.Frame):
             export_btns_frame = ttk.Frame(export_frame)
             export_btns_frame.pack(pady=10)
             
-            ttk.Button(export_btns_frame, text="Exportar a Excel (.xlsx)", command=lambda: exportar_datos_sql('excel', self.user_id)).pack(side=tk.LEFT, padx=10)
-            ttk.Button(export_btns_frame, text="Exportar a CSV (.csv)", command=lambda: exportar_datos_sql('csv', self.user_id)).pack(side=tk.LEFT, padx=10)
+            ttk.Button(export_btns_frame, text="Exportar a Excel (.xlsx)", command=lambda: exportar_datos_sql('excel', self.user_id), underline=13).pack(side=tk.LEFT, padx=10) # Access Key X
+            ttk.Button(export_btns_frame, text="Exportar a CSV (.csv)", command=lambda: exportar_datos_sql('csv', self.user_id), underline=13).pack(side=tk.LEFT, padx=10) # Access Key V
         else:
             ttk.Label(frame, text="Esta pestaña solo está disponible para el rol de Profesor.").pack(pady=20)
             
@@ -1126,7 +1465,7 @@ class CalidadApp(ttk.Frame):
         self.tree.pack(fill='both', expand=True)
 
        
-        ttk.Button(frame, text="Actualizar Registro", command=self.cargar_auditoria).pack(pady=10)
+        ttk.Button(frame, text="Actualizar Registro", command=self.cargar_auditoria, underline=0).pack(pady=10) # Access Key A
         
        
         self.cargar_auditoria()
@@ -1156,29 +1495,177 @@ class CalidadApp(ttk.Frame):
 
 class MainApp(tk.Tk):
     """Clase principal que gestiona el ciclo de vida de la aplicación y las ventanas."""
+    
+    # Dimensiones Base de la Ventana Principal
+    BASE_WIDTH = 950
+    BASE_HEIGHT = 700
+    
     def __init__(self):
         super().__init__()
         self.title("Sistema de Análisis de Calidad ITT")
         self.geometry("1x1") 
         self.withdraw() 
-
-        # --- APLICACIÓN DE DISEÑO MEJORADO (TEMA TTK) ---
-        style = ttk.Style(self)
-        # Aplicamos el tema 'clam' que es más personalizable que el default
-        # Esto le da un aspecto más moderno que los temas clásicos.
-        style.theme_use('clam') 
-        
-        # Estilos generales para un look más definido y espacioso
-        style.configure('TButton', font=('Arial', 10, 'bold'), padding=6)
-        style.configure('TLabel', font=('Arial', 10))
-        style.configure('TNotebook.Tab', padding=[10, 5]) 
-        # --- FIN DISEÑO MEJORADO ---
-
+        self.style = ttk.Style(self)
         self.main_window = None
 
+        # Configuración inicial de estilos y temas
+        self.apply_theme_settings()
         
         self.login_window = LoginWindow(self)
-    
+        
+    def apply_theme_settings(self):
+        """Aplica la configuración de tema, tamaño de fuente e inversión de color."""
+        global CURRENT_FONT_SIZE, COLOR_INVERTED
+        
+        # 1. Aplicar Tema Base y Fuentes
+        self.style.theme_use('clam') 
+
+        # Crear o reconfigurar fuentes con el tamaño actual
+        font_size = CURRENT_FONT_SIZE
+        # Usamos tkinter.font para crear las fuentes con nombre, lo que permite que ttk las use
+        self.tk_normal_font = tkinter.font.Font(family="Arial", size=font_size)
+        self.tk_bold_font = tkinter.font.Font(family="Arial", size=font_size, weight="bold")
+        self.tk_title_font = tkinter.font.Font(family="Arial", size=font_size + 4, weight="bold")
+        self.tk_italic_font = tkinter.font.Font(family="Arial", size=font_size, slant="italic")
+        
+        self.style.configure('.', font=self.tk_normal_font)
+        self.style.configure('TButton', font=self.tk_bold_font, padding=6)
+        self.style.configure('TLabel', font=self.tk_normal_font)
+        self.style.configure('TNotebook.Tab', padding=[10, 5])
+        self.style.configure('Treeview.Heading', font=self.tk_bold_font)
+        
+        # 2. Inversión de Colores
+        if COLOR_INVERTED:
+            # Colores para inversión
+            bg_color = COLOR_MAP.get('white', 'black') # Negro
+            fg_color = COLOR_MAP.get('black', 'white') # Blanco
+            
+            # Reconfigurar estilos comunes
+            self.style.configure('TFrame', background=bg_color)
+            self.style.configure('TLabel', background=bg_color, foreground=fg_color)
+            self.style.configure('TNotebook', background=bg_color)
+            self.style.configure('TNotebook.Tab', background=bg_color, foreground=fg_color)
+            self.style.configure('TButton', background=fg_color, foreground=bg_color)
+            self.style.configure('TEntry', fieldbackground=fg_color, foreground=bg_color)
+            self.style.configure('Treeview', background=bg_color, foreground=fg_color, fieldbackground=bg_color)
+            self.style.map('TButton', background=[('active', 'SystemHighlight')], foreground=[('active', 'SystemHighlightText')])
+
+            # Fondo de la ventana principal
+            self.configure(bg=bg_color)
+            if self.main_window:
+                self.main_window.configure(style='TFrame')
+            
+        else:
+            # Colores normales
+            self.style.theme_use('clam') # Recarga el tema para resetear colores si el tema subyacente lo permite
+            self.style.configure('TButton', font=self.tk_bold_font, padding=6)
+            self.style.configure('TLabel', font=self.tk_normal_font)
+            # Asegurar que el fondo del frame de la app principal sea blanco/claro
+            self.style.configure('TFrame', background='SystemWindow')
+            self.style.configure('TLabel', background='SystemWindow', foreground='SystemWindowText')
+            self.style.configure('Treeview', background='SystemWindow', foreground='SystemWindowText', fieldbackground='SystemWindow')
+            self.configure(bg='SystemWindow')
+            
+
+    def update_font_size(self, container):
+        """
+        Recorre recursivamente todos los widgets en un contenedor (ventana o frame) 
+        y actualiza su fuente o fondo si es necesario.
+        """
+        global CURRENT_FONT_SIZE, COLOR_INVERTED
+        
+        # Actualiza la fuente predeterminada para el contenedor y sus ttk widgets
+        try:
+            # Esto maneja los widgets ttk (TLabel, TButton, etc.)
+            self.style.configure('.', font=self.tk_normal_font)
+            self.style.configure('TButton', font=self.tk_bold_font)
+            self.style.configure('Treeview.Heading', font=self.tk_bold_font)
+        except:
+            pass
+            
+        # Actualizar fuentes de widgets tk 'puros' (como los que se usan para títulos con el font=('Arial', 14, 'bold')
+        for widget in container.winfo_children():
+            try:
+                # Actualiza fuentes de texto directo (como los titles)
+                current_font = widget.cget('font')
+                if isinstance(current_font, str):
+                    match = re.search(r'(\w+)\s*(\d+)\s*(.*)', current_font)
+                    if match:
+                        family, old_size_str, style = match.groups()
+                        old_size = int(old_size_str)
+                        
+                        # Cálculo del nuevo tamaño basado en la relación con el BASE_FONT_SIZE
+                        size_ratio = old_size / BASE_FONT_SIZE
+                        new_size = round(CURRENT_FONT_SIZE * size_ratio)
+                        
+                        new_font_str = f'{family} {new_size} {style}'.strip()
+                        widget.configure(font=new_font_str)
+
+            except tk.TclError:
+                # Ocurre si el widget no tiene la opción 'font' (ej. Frames)
+                pass
+            except Exception as e:
+                # print(f"Error al actualizar fuente de {widget}: {e}")
+                pass
+            
+            # Recorrer widgets anidados
+            self.update_font_size(widget) 
+            
+    def adjust_font(self, delta, label_widget):
+        """Ajusta el tamaño global de la fuente y lo aplica a toda la aplicación."""
+        global CURRENT_FONT_SIZE, BASE_FONT_SIZE
+        
+        if delta == 0:
+            CURRENT_FONT_SIZE = BASE_FONT_SIZE
+        else:
+            new_size = CURRENT_FONT_SIZE + delta
+            if new_size < 6 or new_size > 20: # Limitar el tamaño
+                return
+            CURRENT_FONT_SIZE = new_size
+            
+        # 1. Aplicar la nueva configuración de tema (que incluye el nuevo tamaño)
+        self.apply_theme_settings()
+        
+        # 2. Actualizar las fuentes en toda la ventana principal y popups abiertos
+        if self.main_window:
+            self.update_font_size(self.main_window)
+        
+        # 3. Actualizar la etiqueta en la pestaña de configuración
+        label_widget.config(text=f"{CURRENT_FONT_SIZE} puntos")
+        
+        # 4. Forzar el redraw de Matplotlib (si la pestaña Pareto está abierta)
+        if hasattr(self.main_window, 'tab_pareto') and self.main_window.notebook.tab(self.main_window.notebook.select(), "text") == 'Análisis de Riesgo (Pareto)':
+             # Esto es un workaround. Lo ideal sería volver a llamar a mostrar_pareto().
+             # En este caso, simplemente se avisa.
+             pass 
+
+    def adjust_zoom(self, delta, label_widget):
+        """Ajusta el nivel de zoom de la aplicación modificando el tamaño de la ventana."""
+        global ZOOM_LEVEL
+        
+        if delta == 0:
+            ZOOM_LEVEL = 100
+        else:
+            new_zoom = ZOOM_LEVEL + delta
+            if new_zoom < 50 or new_zoom > 200: # Limitar el zoom
+                return
+            ZOOM_LEVEL = new_zoom
+            
+        scale_factor = ZOOM_LEVEL / 100.0
+        
+        new_width = int(self.BASE_WIDTH * scale_factor)
+        new_height = int(self.BASE_HEIGHT * scale_factor)
+        
+        self.geometry(f"{new_width}x{new_height}")
+        
+        # Actualizar la etiqueta
+        label_widget.config(text=f"{ZOOM_LEVEL}%")
+        
+        # NOTA: En aplicaciones Tkinter/Ttk puras, el zoom es difícil de aplicar globalmente 
+        # sin redibujar o re-dimensionar manualmente muchos widgets (como los anchos fijos de Treeview 
+        # o los tamaños fijos en grid). Este método es una simulación que solo redimensiona la ventana
+        # principal, dando la sensación de zoom.
+
     def show_main_window(self, user_id, role_id, num_control):
         
         if self.main_window:
@@ -1187,8 +1674,12 @@ class MainApp(tk.Tk):
         
         self.main_window = CalidadApp(self, user_id, role_id, num_control)
         
-        # Muestra la ventana principal
-        self.geometry("950x700") 
+        # Muestra la ventana principal con el tamaño ajustado al zoom
+        scale_factor = ZOOM_LEVEL / 100.0
+        new_width = int(self.BASE_WIDTH * scale_factor)
+        new_height = int(self.BASE_HEIGHT * scale_factor)
+        
+        self.geometry(f"{new_width}x{new_height}") 
         self.deiconify() 
         self.main_window.lift() 
         self.main_window.focus_force()
