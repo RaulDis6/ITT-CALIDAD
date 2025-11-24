@@ -6,12 +6,10 @@
 USE ITT_Calidad;
 GO
 
--- ***********************************************
--- PASO 2: CREACIÓN DE TABLAS
--- ***********************************************
+
 
 -- 1. Tabla Roles: Define los tipos de usuarios (Profesor, Estudiante).
--- NOTA: Esta tabla NO tiene un 'Identity' para que los IDs sean fijos (1=Profesor, 2=Estudiante).
+
 IF OBJECT_ID('Roles', 'U') IS NOT NULL DROP TABLE Roles;
 CREATE TABLE Roles (
     ID_Rol INT PRIMARY KEY,
@@ -42,7 +40,7 @@ CREATE TABLE Estudiantes (
     Asistencia_Porcentaje DECIMAL(5, 2) DEFAULT 0.0,
 
     -- Factores de Riesgo (Valores Binarios 0/1)
-    -- Se usan INT porque en Python se mapean con Checkbox (True/False o 1/0)
+ 
     Factor_Academico INT DEFAULT 0, 
     Factor_Psicosocial INT DEFAULT 0,
     Factor_Economico INT DEFAULT 0,
@@ -52,34 +50,34 @@ CREATE TABLE Estudiantes (
 );
 GO
 
--- 3. Tabla Usuarios: Almacena credenciales y asocia a un Rol y, opcionalmente, a un Estudiante.
+-- 3. Tabla Usuarios
 IF OBJECT_ID('Usuarios', 'U') IS NOT NULL DROP TABLE Usuarios;
 CREATE TABLE Usuarios (
     ID_Usuario INT IDENTITY(1,1) PRIMARY KEY,
-    Nombre_Usuario VARCHAR(50) UNIQUE NOT NULL, -- Matrícula o Usuario de Profesor
-    Contrasena_Hash VARCHAR(255) NOT NULL,      -- Contraseña (el código asume que no está hasheada)
+    Nombre_Usuario VARCHAR(50) UNIQUE NOT NULL, 
+    Contrasena_Hash VARCHAR(255) NOT NULL,      
     
     -- Claves Foráneas
-    ID_Rol_FK INT NOT NULL,                     -- 1 (Profesor) o 2 (Estudiante)
-    Num_Control_FK VARCHAR(20) NULL,            -- Solo para Estudiantes (Matrícula)
+    ID_Rol_FK INT NOT NULL,                     
+    Num_Control_FK VARCHAR(20) NULL,            
 
     -- Definición de Foráneas
     CONSTRAINT FK_Usuario_Rol FOREIGN KEY (ID_Rol_FK) REFERENCES Roles(ID_Rol),
-    -- La FK a Estudiantes permite NULL porque los profesores no tienen un registro en la tabla Estudiantes
+    
     CONSTRAINT FK_Usuario_Estudiante FOREIGN KEY (Num_Control_FK) REFERENCES Estudiantes(Num_Control)
 );
 GO
 
--- 4. Tabla RegistroActividad: Para auditoría de inicios y cierres de sesión.
+-- 4. Tabla RegistroActividad
 IF OBJECT_ID('RegistroActividad', 'U') IS NOT NULL DROP TABLE RegistroActividad;
 CREATE TABLE RegistroActividad (
     ID_Registro INT IDENTITY(1,1) PRIMARY KEY,
-    ID_Usuario_FK INT NULL,                      -- Puede ser NULL si es un login fallido o registro nuevo
-    Tipo_Accion VARCHAR(50) NOT NULL,           -- 'LOGIN_EXITOSO', 'LOGOUT', 'REGISTRO_NUEVO_ALUMNO', etc.
+    ID_Usuario_FK INT NULL,                     
+    Tipo_Accion VARCHAR(50) NOT NULL,          
     Detalle VARCHAR(4000) NULL,
     Fecha_Hora DATETIME DEFAULT GETDATE(),
 
-    -- Definición de Foránea (Puede ser NULL)
+    -- Definición de Foránea 
     CONSTRAINT FK_Actividad_Usuario FOREIGN KEY (ID_Usuario_FK) REFERENCES Usuarios(ID_Usuario)
 );
 GO
@@ -105,6 +103,23 @@ BEGIN
         'A2024001', 'García', 'López', 'Andrea', 'ISC (Sistemas)', 1, 'Programación Orientada a Objetos',
         90.5, 95.0, 88.0, 0.0, 0.0, 100.0,
         0, 0, 0, 0, 0, 0 
+		 
+    );
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM Estudiantes WHERE Num_Control = '20211813')
+BEGIN
+    INSERT INTO Estudiantes (
+        Num_Control, Apellido_Paterno, Apellido_Materno, Nombre, Carrera, Semestre, Materia,
+        Calificacion_Unidad_1, Calificacion_Unidad_2, Calificacion_Unidad_3, Calificacion_Unidad_4, Calificacion_Unidad_5, Asistencia_Porcentaje,
+        Factor_Academico, Factor_Psicosocial, Factor_Economico, Factor_Institucional, Factor_Tecnologico, Factor_Contextual 
+    )
+    VALUES (
+        '20211813', 'Molina', 'Mendez', 'Raul', 'ISC (Sistemas)', 11, 'Temas avanzados',
+        90.5, 95.0, 88.0, 90.0, 80.0, 100.0,
+        0, 0, 0, 0, 0, 0  
+		 
     );
 END
 GO
@@ -117,19 +132,39 @@ BEGIN
     VALUES ('ProfesorITT', '123', 1, NULL); 
 END
 
+IF NOT EXISTS (SELECT 1 FROM Usuarios WHERE Nombre_Usuario = '2025')
+BEGIN
+    INSERT INTO Usuarios (Nombre_Usuario, Apellido_Paterno, Apellido_Materno, Nombre, Contrasena_Hash, ID_Rol_FK, Num_Control_FK) 
+    VALUES ('2025', 'Maribel', 'Guerrero', 'Luis', '123', 2, 2025); 
+END
+Go
+
+
 -- 2. Estudiante
 IF NOT EXISTS (SELECT 1 FROM Usuarios WHERE Nombre_Usuario = 'A2024001')
 BEGIN
     INSERT INTO Usuarios (Nombre_Usuario, Contrasena_Hash, ID_Rol_FK, Num_Control_FK) 
     VALUES ('A2024001', 'pass', 2, 'A2024001');
+	
 END
 GO
 
+IF NOT EXISTS (SELECT 1 FROM Usuarios WHERE Nombre_Usuario = '20211813')
+BEGIN
+INSERT INTO Usuarios (Nombre_Usuario, Contrasena_Hash, ID_Rol_FK, Num_Control_FK) 
+    VALUES ('20211813', '123', 2, '20211813');
+	END
+GO
 
--- ***********************************************
--- PASO 5: VERIFICACIÓN FINAL
--- ***********************************************
 
 SELECT 'Roles' AS Tabla, * FROM Roles;
 SELECT 'Estudiantes' AS Tabla, * FROM Estudiantes WHERE Num_Control IN ('A2024001');
+SELECT 'Estudiantes' AS Tabla, * FROM Estudiantes WHERE Num_Control IN ('20211813');
 SELECT 'Usuarios' AS Tabla, * FROM Usuarios WHERE Nombre_Usuario IN ('ProfesorITT', 'A2024001');
+SELECT 'Usuarios' AS Tabla, * FROM Usuarios WHERE Nombre_Usuario IN ('2025');
+
+USE ITT_Calidad;
+GO
+
+DELETE FROM Estudiantes;
+PRINT 'Tabla Estudiantes (Datos Académicos) vaciada.';
